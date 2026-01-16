@@ -102,6 +102,25 @@
       }
     } catch (e) { alert("Server error."); }
   }
+
+  async function handleLeave(id) {
+    if(!confirm("Are you sure you want to leave this workshop?")) return;
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch(`http://localhost:3000/api/workshops/${id}/leave`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        // Remove it immediately from the list so the UI updates fast
+        workshops = workshops.filter(w => w.id !== id);
+      } else {
+        alert("Could not leave.");
+      }
+    } catch (e) { alert("Server error."); }
+  }
+
 </script>
 
 <div class="min-h-screen bg-[#F6F7FB] flex relative">
@@ -162,8 +181,14 @@
             <div class="absolute top-4 right-4 flex gap-2">
               {#if userRole === 'teacher'}
                 <button on:click={() => handleDelete(w.id)} class="p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-red-100">🗑️</button>
-              {:else if userRole === 'student' && activeTab === 'browse'}
-                <button on:click={() => handleJoin(w.id)} class="px-3 py-1 bg-[#1F2D4B] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Join</button>
+              
+              {:else if userRole === 'student'}
+                {#if activeTab === 'schedule'}
+                  <button on:click={() => handleLeave(w.id)} class="px-3 py-1 bg-red-100 text-red-600 text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Leave</button>
+                
+                {:else}
+                  <button on:click={() => handleJoin(w.id)} class="px-3 py-1 bg-[#1F2D4B] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Join</button>
+                {/if}
               {/if}
             </div>
 

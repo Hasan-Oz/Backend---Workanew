@@ -166,4 +166,25 @@ router.post('/:id/join', authenticate, async (req, res) => {
   }
 });
 
+// POST: Leave a workshop
+router.post('/:id/leave', authenticate, async (req, res) => {
+  try {
+    const workshopId = parseInt(req.params.id);
+    const userId = req.user.id;
+
+    // Delete the entry where THIS user matched with THIS workshop
+    await db.delete(registrations)
+      .where(and(
+        eq(registrations.userId, userId),
+        eq(registrations.workshopId, workshopId)
+      ));
+
+    res.json({ message: "Left successfully" });
+
+  } catch (error) {
+    console.error("Leave Error:", error);
+    res.status(500).json({ error: "Failed to leave workshop" });
+  }
+});
+
 export default router;
