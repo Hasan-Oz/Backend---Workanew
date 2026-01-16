@@ -6,6 +6,41 @@ import { authenticate } from '../middleware/security';
 
 const router = Router();
 
+// GET: Dashboard Stats (Counts for the boxes)
+router.get('/stats', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    if (userRole === 'teacher') {
+      // 1. Count my workshops
+      const myWorkshops = await db.select().from(workshops).where(eq(workshops.creatorId, userId));
+      
+      // 2. Count total participants across all my workshops
+      let totalStudents = 0;
+      myWorkshops.forEach(w => {
+        totalStudents += (w.participants || 0);
+      });
+
+      res.json({ 
+        count: myWorkshops.length, 
+        totalStudents: totalStudents 
+      });
+
+    } else {
+      // Student Stats
+      const myRegs = await db.select().from(registrations).where(eq(registrations.userId, userId));
+      res.json({ 
+        joined: myRegs.length 
+      });
+    }
+
+  } catch (error) {
+    console.error("Stats Error:", error);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
 // GET all public workshops + Participant Count
 router.get('/', async (req, res) => {
   try {

@@ -11,11 +11,15 @@
   // Navigation
   let activeTab = "browse"; 
   let userRole = localStorage.getItem("role");
+  let userId = localStorage.getItem("userId");
 
   // Search Logic
   let searchQuery = "";
   
-  // Date Protection (Get today's date: "2023-10-27")
+  // Stats (for Teachers)
+  let stats = { count: 0, totalStudents: 0 };
+
+  // Date Protection (Get today's date)
   const today = new Date().toISOString().split('T')[0];
 
   // Guest List Modal Logic
@@ -30,8 +34,7 @@
     description: ""
   };
 
-  // --- REACTIVE FILTER (CRASH-PROOF) ---
-  // We check 'Array.isArray' to make sure we don't crash if the server sends an error
+  // --- REACTIVE FILTER ---
   $: filteredWorkshops = Array.isArray(workshops) ? workshops.filter(w => {
     const term = searchQuery.toLowerCase();
     const title = (w.title || w.topic || "").toLowerCase();
@@ -41,6 +44,20 @@
 
 
   // --- FUNCTIONS ---
+  async function fetchStats() {
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch("http://localhost:3000/api/workshops/stats", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        stats = await res.json();
+      }
+    } catch (e) {
+      console.error("Stats error", e);
+    }
+  }
+
   async function fetchWorkshops() {
     isLoading = true;
     workshops = [];
@@ -59,11 +76,9 @@
       if (res.ok) {
         workshops = data;
       } else {
-        console.error("Server Error:", data);
-        workshops = []; // Keep it an empty array so search doesn't break
+        workshops = []; 
       }
     } catch (e) {
-      console.error("Network Error:", e);
       workshops = [];
     } finally {
       isLoading = false;
@@ -73,10 +88,15 @@
   // Reload when tab changes
   $: if (activeTab) fetchWorkshops();
 
+  // Load stats on mount
+  onMount(() => {
+    fetchWorkshops();
+    if (userRole) fetchStats();
+  });
+
   async function handleCreate() {
     const token = localStorage.getItem("token");
     try {
-      // Map topic -> title for DB
       const payload = { ...newWorkshop, title: newWorkshop.topic, status: 'public' };
       
       const res = await fetch("http://localhost:3000/api/workshops", {
@@ -89,7 +109,8 @@
       });
 
       if (res.ok) {
-        await fetchWorkshops(); 
+        await fetchWorkshops();
+        if (userRole === 'teacher') fetchStats(); 
         showModal = false;
         newWorkshop = { topic: "", date: "", location: "", description: "" }; 
       } else {
@@ -111,6 +132,7 @@
       });
       if (res.ok) {
         workshops = workshops.filter(w => w.id !== id);
+        if (userRole === 'teacher') fetchStats();
       }
     } catch (e) { alert("Could not delete."); }
   }
@@ -198,6 +220,105 @@
   </aside>
 
   <main class="flex-1 p-8 md:ml-64">
+    
+{#if userRole === 'teacher'}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div class="bg-white rounded-[20px] shadow-sm p-6 flex flex-col justify-between">
+          <div>
+            <h2 class="text-lg font-medium text-[#1F2D4B]">My Impact</h2>
+            <p class="text-sm text-gray-400 mt-1">Total engagement across all workshops</p>
+          </div>
+          <div class="mt-6 flex items-end gap-2">
+            <span class="text-5xl font-bold text-[#1F2D4B]">{stats.totalStudents || 0}</span>
+            <span class="text-lg text-gray-400 mb-1">Students Joined</span>
+          </div>
+          <div class="mt-2 text-sm text-[#5A5BE7] font-medium">
+            Across {stats.count || 0} active workshops
+          </div>
+        </div>
+
+        <div class="bg-white rounded-[20px] shadow-sm p-5">
+          <div class="flex items-center justify-between gap-4">
+            <div class="text-[18px] font-medium text-[#1F2D4B] truncate">Workshop composition</div>
+            <a class="text-[14px] font-medium text-[#5A5BE7] shrink-0" href="#">View Report</a>
+          </div>
+          <div class="mt-6 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-6">
+            <div class="flex items-start gap-3">
+              <span class="mt-1 h-8 w-[3px] rounded-full bg-[#1F2D4B]"></span>
+              <div><div class="text-[12px] text-gray-400">Software</div><div class="text-[16px] font-medium text-[#1F2D4B]">42%</div></div>
+            </div>
+            <div class="flex items-start gap-3">
+              <span class="mt-1 h-8 w-[3px] rounded-full bg-[#1F2D4B]"></span>
+              <div><div class="text-[12px] text-gray-400">Security</div><div class="text-[16px] font-medium text-[#1F2D4B]">25%</div></div>
+            </div>
+             <div class="flex items-start gap-3">
+              <span class="mt-1 h-8 w-[3px] rounded-full bg-[#1F2D4B]"></span>
+              <div><div class="text-[12px] text-gray-400">Design</div><div class="text-[16px] font-medium text-[#1F2D4B]">17%</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    {:else if userRole === 'student'}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        
+        <div class="bg-white rounded-[20px] shadow-sm p-5">
+          <div class="flex items-center justify-between gap-4">
+            <div class="text-[18px] font-medium text-[#1F2D4B] truncate">Attendance breakdown</div>
+            <a class="text-[14px] font-medium text-[#5A5BE7] shrink-0" href="#">Expand</a>
+          </div>
+
+          <div class="mt-4 flex items-center gap-6">
+            <div class="relative h-[210px] w-[210px] shrink-0">
+              <svg viewBox="0 0 120 120" class="h-full w-full">
+                <circle cx="60" cy="60" r="44" fill="none" stroke="#EEF0F6" stroke-width="18" />
+                <circle cx="60" cy="60" r="44" fill="none" stroke="#1F2D4B" stroke-width="18" stroke-linecap="round" stroke-dasharray="62 214" stroke-dashoffset="0" transform="rotate(-90 60 60)"/>
+                <circle cx="60" cy="60" r="44" fill="none" stroke="#4B5C86" stroke-width="18" stroke-linecap="round" stroke-dasharray="54 214" stroke-dashoffset="-70" transform="rotate(-90 60 60)"/>
+              </svg>
+
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <div class="text-[44px] font-medium text-[#1F2D4B] leading-none">{stats.joined || 0}</div>
+                <div class="text-[14px] font-medium text-[rgba(0,0,0,.45)] -mt-0.5">Total</div>
+              </div>
+            </div>
+
+            <div class="flex-1 space-y-4 pl-4 min-w-0 hidden sm:block">
+              <div class="flex items-center gap-4"><span class="h-3 w-3 rounded-full bg-[#1F2D4B]"></span><span class="text-sm text-gray-600">Software</span></div>
+              <div class="flex items-center gap-4"><span class="h-3 w-3 rounded-full bg-[#4B5C86]"></span><span class="text-sm text-gray-600">Design</span></div>
+              <div class="flex items-center gap-4"><span class="h-3 w-3 rounded-full bg-[#B9BFF0]"></span><span class="text-sm text-gray-600">Security</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-[20px] shadow-sm p-5 flex flex-col">
+          <div class="flex items-center justify-between gap-4 mb-4">
+            <div class="flex items-center gap-3">
+              <div class="text-[18px] font-medium text-[#1F2D4B]">Notifications</div>
+              <span class="h-6 px-2 rounded-lg bg-[#EEF0F6] text-[12px] font-medium text-[#111827] flex items-center">3</span>
+            </div>
+            <a class="text-[14px] font-medium text-[#5A5BE7]" href="#">See All</a>
+          </div>
+
+          <div class="space-y-5 overflow-y-auto h-48 pr-2">
+            <div class="flex gap-3">
+              <div class="h-9 w-9 rounded-xl bg-[#EEF0F6] flex items-center justify-center shrink-0 text-[#5A5BE7] font-bold">?</div>
+              <div>
+                <div class="text-[16px] font-medium text-[#5A5BE7]">Any ideas?</div>
+                <div class="text-[15px] text-gray-400 leading-tight mt-1">Share your ideas and interests in the suggestions tab.</div>
+              </div>
+            </div>
+            <div class="flex gap-3">
+              <div class="h-9 w-9 rounded-xl bg-[#EEF0F6] flex items-center justify-center shrink-0 text-[#1F2D4B] font-bold">i</div>
+              <div>
+                <div class="text-[16px] font-medium text-[#1F2D4B]">Changed time</div>
+                <div class="text-[15px] text-gray-400 leading-tight mt-1">Computational Thinking will start 30 mins later.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
       <h1 class="text-2xl font-bold text-[#1F2D4B]">
         {activeTab === 'browse' ? 'Browse Workshops' : 'My Schedule'}
@@ -264,18 +385,30 @@
     <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div class="bg-white w-full max-w-lg rounded-[24px] shadow-2xl p-8 relative">
         <h2 class="text-2xl font-bold text-[#1F2D4B] mb-6">New Workshop</h2>
-        <div class="space-y-4">
-          <input type="text" bind:value={newWorkshop.topic} class="w-full h-12 border rounded-xl px-4" placeholder="Topic" />
+        
+        <form class="space-y-4" on:submit|preventDefault={handleCreate}>
+          <div>
+            <input type="text" required bind:value={newWorkshop.topic} class="w-full h-12 border border-gray-200 rounded-xl px-4 focus:ring-2 focus:ring-[#1F2D4B] outline-none transition" placeholder="Topic" />
+          </div>
+
           <div class="grid grid-cols-2 gap-4">
-            <input type="date" min={today} bind:value={newWorkshop.date} class="w-full h-12 border rounded-xl px-4" />
-            <input type="text" bind:value={newWorkshop.location} class="w-full h-12 border rounded-xl px-4" placeholder="Location" />
+            <div>
+              <input type="date" required min={today} bind:value={newWorkshop.date} class="w-full h-12 border border-gray-200 rounded-xl px-4 focus:ring-2 focus:ring-[#1F2D4B] outline-none transition text-gray-500" />
+            </div>
+            <div>
+              <input type="text" required bind:value={newWorkshop.location} class="w-full h-12 border border-gray-200 rounded-xl px-4 focus:ring-2 focus:ring-[#1F2D4B] outline-none transition" placeholder="Location" />
+            </div>
           </div>
-          <textarea bind:value={newWorkshop.description} class="w-full h-32 border rounded-xl p-4 resize-none" placeholder="Description"></textarea>
+
+          <div>
+            <textarea bind:value={newWorkshop.description} class="w-full h-32 border border-gray-200 rounded-xl p-4 resize-none focus:ring-2 focus:ring-[#1F2D4B] outline-none transition" placeholder="Description"></textarea>
+          </div>
+
           <div class="flex gap-3 mt-4">
-            <button on:click={() => showModal = false} class="flex-1 py-3 text-gray-500 hover:bg-gray-100 rounded-xl transition">Cancel</button>
-            <button on:click={handleCreate} class="flex-1 py-3 bg-[#1F2D4B] text-white font-bold rounded-xl hover:opacity-90 transition">Create</button>
+            <button type="button" on:click={() => showModal = false} class="flex-1 py-3 text-gray-500 hover:bg-gray-100 rounded-xl transition font-medium">Cancel</button>
+            <button type="submit" class="flex-1 py-3 bg-[#1F2D4B] text-white font-bold rounded-xl hover:opacity-90 transition">Create</button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   {/if}
@@ -312,3 +445,16 @@
     </div>
   {/if}
 </div>
+
+<style>
+  :root {
+    --navy: #1F2D4B;
+    --muted: rgba(0,0,0,.55);
+    --chip: #EEF0F6;
+    --link: #5A5BE7;
+    --radius: 20px;
+  }
+  div, button, input, textarea {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+</style>
