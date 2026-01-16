@@ -7,6 +7,32 @@
   let showModal = false;
   let error = "";
   
+  // NEW: Variables for the Guest List Modal
+  let showGuestsModal = false;
+  let currentGuests = [];
+  let currentWorkshopTitle = "";
+
+  // NEW: Function to fetch and show guests
+  async function viewGuests(workshop) {
+    const token = localStorage.getItem("token");
+    currentWorkshopTitle = workshop.title || workshop.topic;
+    
+    try {
+      const res = await fetch(`http://localhost:3000/api/workshops/${workshop.id}/participants`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        currentGuests = await res.json();
+        showGuestsModal = true; // Open the popup
+      } else {
+        alert("Could not load guest list.");
+      }
+    } catch (e) {
+      alert("Server error.");
+    }
+  }
+
   // NEW: State to track which page we are on ('browse' or 'schedule')
   let activeTab = "browse"; 
   let userRole = localStorage.getItem("role");
@@ -180,12 +206,13 @@
             
             <div class="absolute top-4 right-4 flex gap-2">
               {#if userRole === 'teacher'}
+                <button on:click={() => viewGuests(w)} class="p-2 bg-blue-50 text-blue-600 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-blue-100" title="View Guest List">📋</button>
+                
                 <button on:click={() => handleDelete(w.id)} class="p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-red-100">🗑️</button>
               
               {:else if userRole === 'student'}
                 {#if activeTab === 'schedule'}
                   <button on:click={() => handleLeave(w.id)} class="px-3 py-1 bg-red-100 text-red-600 text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Leave</button>
-                
                 {:else}
                   <button on:click={() => handleJoin(w.id)} class="px-3 py-1 bg-[#1F2D4B] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Join</button>
                 {/if}
@@ -205,6 +232,45 @@
       {/if}
     </div>
   </main>
+
+  {#if showGuestsModal}
+    <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="bg-white w-full max-w-md rounded-[24px] shadow-2xl p-8 relative">
+        
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-xl font-bold text-[#1F2D4B]">Guest List</h2>
+          <button on:click={() => showGuestsModal = false} class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+
+        <p class="text-sm text-gray-500 mb-4">Workshop: <span class="font-semibold">{currentWorkshopTitle}</span></p>
+
+        <div class="bg-gray-50 rounded-xl p-4 max-h-60 overflow-y-auto">
+          {#if currentGuests.length === 0}
+            <p class="text-center text-gray-400">No one has joined yet.</p>
+          {:else}
+            <ul class="space-y-3">
+              {#each currentGuests as guest}
+                <li class="flex items-center gap-3 border-b border-gray-100 last:border-0 pb-2 last:pb-0">
+                  <div class="h-8 w-8 rounded-full bg-[#1F2D4B] text-white flex items-center justify-center text-xs font-bold">
+                    {guest.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p class="font-medium text-[#1F2D4B] text-sm">{guest.username}</p>
+                    <p class="text-xs text-gray-400">{guest.email}</p>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+
+        <button on:click={() => showGuestsModal = false} class="w-full mt-6 py-3 bg-[#1F2D4B] text-white font-bold rounded-xl hover:opacity-90 transition">
+          Close
+        </button>
+
+      </div>
+    </div>
+  {/if}
 
   {#if showModal}
     <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { workshops, registrations } from '../db/schema';
+import { workshops, registrations, users } from '../db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { authenticate } from '../middleware/security';
 
@@ -184,6 +184,46 @@ router.post('/:id/leave', authenticate, async (req, res) => {
   } catch (error) {
     console.error("Leave Error:", error);
     res.status(500).json({ error: "Failed to leave workshop" });
+  }
+});
+
+// GET: Get participant list for a specific workshop (Teachers Only)
+import { users } from '../db/schema'; // 👈 Make sure to import 'users' at the top!
+
+router.get('/:id/participants', authenticate, async (req, res) => {
+  try {
+    // Only teachers can see the list
+    if (req.user.role !== 'teacher') {
+      return res.status(403).json({ error: "Unauthorized" });
+    }
+
+    const workshopId = parseInt(req.params.id);
+
+    // 1. Get User IDs from registrations
+    const workshopRegistrations = await db.select()
+      .from(registrations)
+      .where(eq(registrations.workshopId, workshopId));
+
+    if (workshopRegistrations.length === 0) {
+      return res.json([]);
+    }
+
+    const userIds = workshopRegistrations.map(r => r.userId);
+
+    // 2. Fetch details (Username/Email) from Users table
+    const participants = await db.select({
+        id: users.id,
+        username: users.username,
+        email: users.email
+      })
+      .from(users)
+      .where(inArray(users.id, userIds));
+
+    res.json(participants);
+
+  } catch (error) {
+    console.error("Get Participants Error:", error);
+    res.status(500).json({ error: "Failed to fetch participants" });
   }
 });
 
