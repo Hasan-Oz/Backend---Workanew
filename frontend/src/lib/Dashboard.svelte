@@ -4,13 +4,13 @@
 
   let workshops = [];
   let isLoading = true;
-  let showModal = false; // Controls the popup
+  let showModal = false;
   let error = "";
   
-  // 1. Get the Role (teacher vs student)
-  let userRole = localStorage.getItem("role"); 
+  // NEW: State to track which page we are on ('browse' or 'schedule')
+  let activeTab = "browse"; 
+  let userRole = localStorage.getItem("role");
 
-  // Data for the new workshop (Renamed Title -> Topic)
   let newWorkshop = {
     topic: "",
     date: "",
@@ -18,11 +18,19 @@
     description: ""
   };
 
-  // 2. Load Workshops on Start
+  // 1. UPDATED: Fetch function checks which tab is active
   async function fetchWorkshops() {
+    isLoading = true;
+    workshops = []; // Clear list while loading
     const token = localStorage.getItem("token");
+    
+    // Choose the URL based on the tab
+    const url = activeTab === 'schedule' 
+      ? "http://localhost:3000/api/workshops/my" 
+      : "http://localhost:3000/api/workshops";
+
     try {
-      const res = await fetch("http://localhost:3000/api/workshops", {
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -35,26 +43,28 @@
     }
   }
 
-  onMount(fetchWorkshops);
+  // Reload data whenever the tab changes
+  $: if (activeTab) fetchWorkshops();
 
-  // 3. Handle Creating a Workshop
   async function handleCreate() {
     const token = localStorage.getItem("token");
     try {
-      // We add "status: public" so the backend doesn't hide it!
+      // Note: We map 'topic' to 'title' because of your DB schema
+      const payload = { ...newWorkshop, title: newWorkshop.topic, status: 'public' };
+      
       const res = await fetch("http://localhost:3000/api/workshops", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}` 
         },
-        body: JSON.stringify({ ...newWorkshop, status: 'public' }) 
+        body: JSON.stringify(payload) 
       });
 
       if (res.ok) {
-        await fetchWorkshops(); // Refresh list
+        await fetchWorkshops(); 
         showModal = false;
-        newWorkshop = { topic: "", date: "", location: "", description: "" }; // Reset form
+        newWorkshop = { topic: "", date: "", location: "", description: "" }; 
       } else {
         const data = await res.json();
         error = data.error || "Failed to create workshop";
@@ -64,111 +74,106 @@
     }
   }
 
-  // 4. Handle Deleting a Workshop
   async function handleDelete(id) {
     if(!confirm("Are you sure you want to delete this?")) return;
-
     const token = localStorage.getItem("token");
     try {
-      // Uses `id` instead of `_id`
       const res = await fetch(`http://localhost:3000/api/workshops/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      if (res.ok) {
-        workshops = workshops.filter(w => w.id !== id);
-      } else {
-        alert("Delete failed.");
-      }
-    } catch (e) {
-      alert("Could not delete.");
-    }
+      if (res.ok) workshops = workshops.filter(w => w.id !== id);
+    } catch (e) { alert("Could not delete."); }
   }
 
-  // 5. Handle Joining (Placeholder for now)
-async function handleJoin(id) {
+  async function handleJoin(id) {
     const token = localStorage.getItem("token");
     try {
       const res = await fetch(`http://localhost:3000/api/workshops/${id}/join`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }
       });
-
       const data = await res.json();
-      
       if (res.ok) {
-        alert("Success! You have joined the workshop. 🎉");
-        // Optional: Here you could refresh the list or disable the button
+        alert("Success! Joined.");
+        fetchWorkshops(); // Refresh to update counts
       } else {
         alert(data.error || "Could not join.");
       }
-    } catch (e) {
-      alert("Server error. Please try again.");
-    }
+    } catch (e) { alert("Server error."); }
   }
 </script>
 
 <div class="min-h-screen bg-[#F6F7FB] flex relative">
   
-  <aside class="hidden md:flex w-[86px] flex-col items-center py-6 bg-white border-r fixed h-full z-10">
-    <div class="h-12 w-12 rounded-2xl bg-[#1F2D4B] flex items-center justify-center text-white font-bold text-xl mb-8">WF</div>
+  <aside class="hidden md:flex w-64 flex-col py-6 bg-white border-r fixed h-full z-10 px-4">
+    <div class="flex items-center gap-3 px-4 mb-10 text-[#1F2D4B]">
+      <div class="h-8 w-8 rounded-lg bg-[#1F2D4B] flex items-center justify-center text-white font-bold">WF</div>
+      <span class="font-bold text-lg">WorkAnew</span>
+    </div>
     
-    <button on:click={onLogout} class="mt-auto h-10 w-10 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 flex items-center justify-center transition" title="Logout">
-      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+    <nav class="space-y-2 flex-1">
+      <button 
+        on:click={() => activeTab = 'browse'}
+        class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium {activeTab === 'browse' ? 'bg-[#F6F7FB] text-[#1F2D4B]' : 'text-gray-400 hover:bg-gray-50'}">
+        <span>🔍</span> Browse Workshops
+      </button>
+
+      {#if userRole === 'student'}
+        <button 
+          on:click={() => activeTab = 'schedule'}
+          class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition font-medium {activeTab === 'schedule' ? 'bg-[#F6F7FB] text-[#1F2D4B]' : 'text-gray-400 hover:bg-gray-50'}">
+          <span>📅</span> My Schedule
+        </button>
+      {/if}
+    </nav>
+
+    <button on:click={onLogout} class="mt-auto flex items-center gap-3 px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl transition font-medium">
+      <span>🚪</span> Logout
     </button>
   </aside>
 
-  <main class="flex-1 p-8 md:ml-[86px]">
+  <main class="flex-1 p-8 md:ml-64">
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-2xl font-bold text-[#1F2D4B]">Dashboard</h1>
+      <h1 class="text-2xl font-bold text-[#1F2D4B]">
+        {activeTab === 'browse' ? 'Browse Workshops' : 'My Schedule'}
+      </h1>
       
       {#if userRole === 'teacher'}
-        <button on:click={() => showModal = true} class="bg-[#1F2D4B] text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:opacity-90 transition flex items-center gap-2">
-          <span>+ Create Workshop</span>
+        <button on:click={() => showModal = true} class="bg-[#1F2D4B] text-white px-6 py-3 rounded-xl font-semibold shadow-lg hover:opacity-90 transition">
+          + Create Workshop
         </button>
       {/if}
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {#if isLoading}
-        <p class="text-gray-400">Loading workshops...</p>
+        <div class="col-span-full text-center py-12 text-gray-400">Loading...</div>
       {:else if workshops.length === 0}
         <div class="col-span-full bg-white p-12 rounded-[20px] text-center shadow-sm border border-dashed border-gray-300">
-          <p class="text-gray-400 font-medium">No workshops found.</p>
-          {#if userRole === 'teacher'}
-            <button on:click={() => showModal = true} class="text-[#1F2D4B] font-bold mt-2 hover:underline">Create your first one</button>
-          {/if}
+          <p class="text-gray-400 font-medium">
+            {activeTab === 'browse' ? 'No workshops available.' : 'You haven\'t joined any workshops yet.'}
+          </p>
         </div>
       {:else}
         {#each workshops as w}
           <div class="bg-white p-6 rounded-[24px] shadow-sm hover:shadow-md transition group relative overflow-hidden">
             
-            {#if userRole === 'teacher'}
-              <button on:click={() => handleDelete(w.id)} class="absolute top-4 right-4 p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-red-100" title="Delete">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-              </button>
-            {:else if userRole === 'student'}
-              <button on:click={() => handleJoin(w.id)} class="absolute top-4 right-4 px-4 py-2 bg-[#1F2D4B] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition shadow-md hover:bg-opacity-90">
-                Join
-              </button>
-            {/if}
+            <div class="absolute top-4 right-4 flex gap-2">
+              {#if userRole === 'teacher'}
+                <button on:click={() => handleDelete(w.id)} class="p-2 bg-red-50 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition hover:bg-red-100">🗑️</button>
+              {:else if userRole === 'student' && activeTab === 'browse'}
+                <button on:click={() => handleJoin(w.id)} class="px-3 py-1 bg-[#1F2D4B] text-white text-xs font-bold rounded-lg opacity-0 group-hover:opacity-100 transition hover:opacity-90">Join</button>
+              {/if}
+            </div>
 
-            <h3 class="font-bold text-xl text-[#1F2D4B] mb-2">{w.topic}</h3>
+            <h3 class="font-bold text-xl text-[#1F2D4B] mb-2">{w.title || w.topic}</h3>
             <p class="text-sm text-gray-500 mb-6 line-clamp-2">{w.description}</p>
             
             <div class="flex items-center justify-between text-xs font-medium text-gray-400 border-t pt-4 border-gray-100">
-            <div class="flex items-center gap-1">
-                <span>📍</span> <span>{w.location}</span>
-            </div>
-            <div class="flex items-center gap-1">
-                <span>📅</span> <span>{w.date ? new Date(w.date).toLocaleDateString() : 'TBD'}</span>
-            </div>
-            
-            <div class="flex items-center gap-1 text-[#1F2D4B]">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                <span>{w.participants || 0}</span>
-            </div>
+              <div class="flex items-center gap-1">📍 {w.location}</div>
+              <div class="flex items-center gap-1">📅 {w.date ? new Date(w.date).toLocaleDateString() : 'TBD'}</div>
+               <div class="flex items-center gap-1 text-[#1F2D4B]">👥 {w.participants || 0}</div>
             </div>
           </div>
         {/each}
@@ -178,46 +183,21 @@ async function handleJoin(id) {
 
   {#if showModal}
     <div class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-white w-full max-w-lg rounded-[24px] shadow-2xl p-8 relative animate-in fade-in zoom-in duration-200">
-        
-        <div class="flex justify-between items-center mb-6">
-          <h2 class="text-2xl font-bold text-[#1F2D4B]">New Workshop</h2>
-          <button on:click={() => showModal = false} class="text-gray-400 hover:text-gray-600">✕</button>
-        </div>
-
-        {#if error}
-          <div class="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4">{error}</div>
-        {/if}
-
+      <div class="bg-white w-full max-w-lg rounded-[24px] shadow-2xl p-8 relative">
+        <h2 class="text-2xl font-bold text-[#1F2D4B] mb-6">New Workshop</h2>
         <div class="space-y-4">
-          <div>
-            <label class="block text-sm font-bold text-gray-700 mb-1">Topic</label>
-            <input type="text" bind:value={newWorkshop.topic} class="w-full h-12 border rounded-xl px-4 focus:outline-none focus:border-[#1F2D4B] transition" placeholder="e.g. Intro to Svelte" />
-          </div>
-
+          <input type="text" bind:value={newWorkshop.topic} class="w-full h-12 border rounded-xl px-4" placeholder="Topic" />
           <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-bold text-gray-700 mb-1">Date</label>
-              <input type="date" bind:value={newWorkshop.date} class="w-full h-12 border rounded-xl px-4 focus:outline-none focus:border-[#1F2D4B] transition" />
-            </div>
-            <div>
-              <label class="block text-sm font-bold text-gray-700 mb-1">Location</label>
-              <input type="text" bind:value={newWorkshop.location} class="w-full h-12 border rounded-xl px-4 focus:outline-none focus:border-[#1F2D4B] transition" placeholder="e.g. Room 301" />
-            </div>
+            <input type="date" bind:value={newWorkshop.date} class="w-full h-12 border rounded-xl px-4" />
+            <input type="text" bind:value={newWorkshop.location} class="w-full h-12 border rounded-xl px-4" placeholder="Location" />
           </div>
-
-          <div>
-            <label class="block text-sm font-bold text-gray-700 mb-1">Description</label>
-            <textarea bind:value={newWorkshop.description} class="w-full h-32 border rounded-xl p-4 focus:outline-none focus:border-[#1F2D4B] transition resize-none" placeholder="What is this workshop about?"></textarea>
+          <textarea bind:value={newWorkshop.description} class="w-full h-32 border rounded-xl p-4 resize-none" placeholder="Description"></textarea>
+          <div class="flex gap-3 mt-4">
+            <button on:click={() => showModal = false} class="flex-1 py-3 text-gray-500 hover:bg-gray-100 rounded-xl transition">Cancel</button>
+            <button on:click={handleCreate} class="flex-1 py-3 bg-[#1F2D4B] text-white font-bold rounded-xl hover:opacity-90 transition">Create</button>
           </div>
-
-          <button on:click={handleCreate} class="w-full h-12 bg-[#1F2D4B] text-white font-bold rounded-xl mt-4 hover:opacity-90 transition shadow-lg">
-            Create Workshop
-          </button>
         </div>
-
       </div>
     </div>
   {/if}
-
 </div>

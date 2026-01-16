@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { workshops, registrations } from '../db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { authenticate } from '../middleware/security';
 
 const router = Router();
@@ -52,6 +52,65 @@ router.post('/', authenticate, async (req, res) => {
   } catch (error) {
     console.error("Create Workshop Error:", error);
     res.status(500).json({ error: "Failed to create workshop" });
+  }
+});
+
+// GET: My Personal Schedule (Workshops I joined)
+router.get('/my', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Get the list of IDs I signed up for
+    const myRegistrations = await db.select()
+      .from(registrations)
+      .where(eq(registrations.userId, userId));
+
+    if (myRegistrations.length === 0) {
+      return res.json([]); // If I joined nothing, return empty list
+    }
+
+    // Extract just the IDs (e.g., [1, 5, 8])
+    const workshopIds = myRegistrations.map(r => r.workshopId);
+
+    // 2. Fetch the actual workshop details for those IDs
+    const myWorkshops = await db.select()
+      .from(workshops)
+      .where(inArray(workshops.id, workshopIds));
+
+    res.json(myWorkshops);
+  } catch (error) {
+    console.error("My Schedule Error:", error);
+    res.status(500).json({ error: "Failed to fetch schedule" });
+  }
+});
+
+// GET: My Personal Schedule (Workshops I joined)
+router.get('/my', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Find all registrations for this user
+    const myRegistrations = await db.select()
+      .from(registrations)
+      .where(eq(registrations.userId, userId));
+
+    // If the user hasn't joined anything, return an empty list
+    if (myRegistrations.length === 0) {
+      return res.json([]); 
+    }
+
+    // 2. Get the list of Workshop IDs (e.g., [1, 5, 8])
+    const workshopIds = myRegistrations.map(r => r.workshopId);
+
+    // 3. Fetch the actual workshop details for those IDs
+    const myWorkshops = await db.select()
+      .from(workshops)
+      .where(inArray(workshops.id, workshopIds));
+
+    res.json(myWorkshops);
+  } catch (error) {
+    console.error("My Schedule Error:", error);
+    res.status(500).json({ error: "Failed to fetch schedule" });
   }
 });
 
