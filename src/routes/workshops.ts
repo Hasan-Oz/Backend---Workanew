@@ -1,34 +1,30 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { workshops, registrations, users } from '../db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import { authenticate } from '../middleware/security';
 
 const router = Router();
 
-// GET: Dashboard Stats (Counts for the boxes)
-router.get('/stats', authenticate, async (req, res) => {
+// ==========================================
+// 1. GET STATISTICS (Dashboard Boxes)
+// ==========================================
+router.get('/stats', authenticate, async (req: any, res: any) => {
   try {
     const userId = req.user.id;
     const userRole = req.user.role;
 
     if (userRole === 'teacher') {
-      // 1. Count my workshops
+      // Teacher: Count workshops I created
       const myWorkshops = await db.select().from(workshops).where(eq(workshops.creatorId, userId));
       
-      // 2. Count total participants across all my workshops
-      let totalStudents = 0;
-      myWorkshops.forEach(w => {
-        totalStudents += (w.participants || 0);
-      });
-
       res.json({ 
         count: myWorkshops.length, 
-        totalStudents: totalStudents 
+        totalStudents: 0 // Placeholder until we calculate real enrollment counts
       });
 
     } else {
-      // Student Stats
+      // Student: Count workshops I joined
       const myRegs = await db.select().from(registrations).where(eq(registrations.userId, userId));
       res.json({ 
         joined: myRegs.length 
@@ -41,20 +37,34 @@ router.get('/stats', authenticate, async (req, res) => {
   }
 });
 
-// GET all public workshops + Participant Count
-router.get('/', async (req, res) => {
+// ==========================================
+// 2. GET WORKSHOPS (Dashboard & Marketplace)
+// ==========================================
+router.get('/', authenticate, async (req: any, res: any) => {
   try {
+    const userRole = req.user.role;
+    const userId = req.user.id;
+
+    if (userRole === 'teacher') {
+        // TEACHER VIEW: Return only workshops created by ME
+        const result = await db.select()
+            .from(workshops)
+            .where(eq(workshops.creatorId, userId))
+            .orderBy(desc(workshops.createdAt));
+        return res.json(result);
+    } 
+
+    // STUDENT VIEW: Return ALL PUBLIC workshops
     const allWorkshops = await db
       .select()
       .from(workshops)
-      .where(eq(workshops.status, 'public'));
+      .where(eq(workshops.status, 'Public')) // Matches 'Public' from your team's DB script
+      .orderBy(desc(workshops.createdAt));
 
+    // Optional: Calculate participant counts for the UI
     const allRegistrations = await db.select().from(registrations);
-
-    // Count guests for each workshop
     const finalResult = allWorkshops.map(w => {
-      // We use == to match string ID "5" with number ID 5
-      const count = allRegistrations.filter(r => r.workshopId == w.id).length;
+      const count = allRegistrations.filter(r => r.workshopId === w.id).length;
       return { ...w, participants: count };
     });
       
@@ -65,62 +75,59 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST: Create a new workshop
-router.post('/', authenticate, async (req, res) => {
+// ==========================================
+// 3. CREATE WORKSHOP (Teacher Only)
+// ==========================================
+router.post('/', authenticate, async (req: any, res: any) => {
   try {
     if (req.user.role !== 'teacher') {
-       return res.status(403).json({ error: "Only teachers can create workshops" });
+      return res.status(403).json({ error: "Only teachers can create workshops" });
     }
 
-    const { topic, date, location, description, status } = req.body;
+    // 1. Get data (Frontend sends 'location', DB wants 'room')
+    // We also look for 'time' to combine it with date if needed
+    const { title, topic, description, date, time, price, duration, location, status, language } = req.body;
     
-    await db.insert(workshops).values({
-      topic, 
-      date: new Date(date),
-      location,
-      description,
-      status: status || 'draft',
-      creatorId: req.user.id // 👈 FIX 1: We now tell the DB who created it!
-    });
-
-    res.status(201).json({ message: "Workshop created" });
-  } catch (error) {
-    console.error("Create Workshop Error:", error);
-    res.status(500).json({ error: "Failed to create workshop" });
-  }
-});
-
-// GET: My Personal Schedule (Workshops I joined)
-router.get('/my', authenticate, async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    // 1. Get the list of IDs I signed up for
-    const myRegistrations = await db.select()
-      .from(registrations)
-      .where(eq(registrations.userId, userId));
-
-    if (myRegistrations.length === 0) {
-      return res.json([]); // If I joined nothing, return empty list
+    // 2. Prepare defaults
+    const finalTitle = title || "Untitled Workshop";
+    const finalTopic = topic || title || "General";
+    
+    // Combine Date & Time if both exist
+    let finalDate = date || "TBD";
+    if (date && time) {
+        finalDate = `${date} ${time}`;
     }
 
-    // Extract just the IDs (e.g., [1, 5, 8])
-    const workshopIds = myRegistrations.map(r => r.workshopId);
+    // 3. Insert into Database
+    const newWorkshop = await db.insert(workshops).values({
+      title: finalTitle,
+      topic: finalTopic,
+      description: description || "",
+      date: finalDate,
+      
+      // MAP FIELDS:
+      room: location || "Online",       // Frontend 'location' -> DB 'room'
+      language: language || "EN",       // New Language field
+      
+      duration: duration ? parseInt(duration) : 60,
+      status: status || 'Public',       // Default to Public as per schema
+      creatorId: req.user.id            // The Teacher's ID
+    }).returning();
 
-    // 2. Fetch the actual workshop details for those IDs
-    const myWorkshops = await db.select()
-      .from(workshops)
-      .where(inArray(workshops.id, workshopIds));
+    console.log("SUCCESS! Created:", newWorkshop[0]);
+    res.status(201).json(newWorkshop[0]);
 
-    res.json(myWorkshops);
-  } catch (error) {
-    console.error("My Schedule Error:", error);
-    res.status(500).json({ error: "Failed to fetch schedule" });
+  } catch (error: any) {
+    console.error("Create Workshop Error:", error);
+    // Send the REAL error message to the frontend for easier debugging
+    res.status(500).json({ error: error.message || "Database Error" });
   }
 });
 
-// GET: My Personal Schedule (Workshops I joined)
-router.get('/my', authenticate, async (req, res) => {
+// ==========================================
+// 4. GET MY SCHEDULE (Workshops I joined)
+// ==========================================
+router.get('/my', authenticate, async (req: any, res: any) => {
   try {
     const userId = req.user.id;
 
@@ -129,15 +136,14 @@ router.get('/my', authenticate, async (req, res) => {
       .from(registrations)
       .where(eq(registrations.userId, userId));
 
-    // If the user hasn't joined anything, return an empty list
     if (myRegistrations.length === 0) {
       return res.json([]); 
     }
 
-    // 2. Get the list of Workshop IDs (e.g., [1, 5, 8])
+    // 2. Get the list of Workshop IDs
     const workshopIds = myRegistrations.map(r => r.workshopId);
 
-    // 3. Fetch the actual workshop details for those IDs
+    // 3. Fetch the actual workshop details
     const myWorkshops = await db.select()
       .from(workshops)
       .where(inArray(workshops.id, workshopIds));
@@ -149,16 +155,57 @@ router.get('/my', authenticate, async (req, res) => {
   }
 });
 
-// DELETE: Remove a workshop
-router.delete('/:id', authenticate, async (req, res) => {
+// ==========================================
+// 5. UPDATE WORKSHOP
+// ==========================================
+router.put('/:id', authenticate, async (req: any, res: any) => {
+  try {
+    const workshopId = parseInt(req.params.id);
+    const { topic, date, location, description, language } = req.body;
+    const userId = req.user.id;
+
+    // Check if workshop exists & belongs to user
+    const existing = await db.select()
+      .from(workshops)
+      .where(and(eq(workshops.id, workshopId), eq(workshops.creatorId, userId)))
+      .limit(1);
+
+    if (existing.length === 0) {
+      return res.status(403).json({ error: "Not authorized or workshop not found" });
+    }
+
+    // Update it
+    await db.update(workshops)
+      .set({
+        topic,
+        title: topic, // Keeping title in sync if desired
+        date,
+        room: location, // Map location -> room
+        description,
+        language
+      })
+      .where(eq(workshops.id, workshopId));
+
+    res.json({ message: "Updated successfully" });
+
+  } catch (error) {
+    console.error("Update Error:", error);
+    res.status(500).json({ error: "Failed to update" });
+  }
+});
+
+// ==========================================
+// 6. DELETE WORKSHOP
+// ==========================================
+router.delete('/:id', authenticate, async (req: any, res: any) => {
   try {
     if (req.user.role !== 'teacher') {
-      return res.status(403).json({ error: "Only teachers can delete workshops" });
-   }
+       return res.status(403).json({ error: "Only teachers can delete workshops" });
+    }
 
     const workshopId = parseInt(req.params.id);
 
-    // 👈 FIX 2: Delete the tickets (registrations) FIRST
+    // Delete the tickets (registrations) FIRST
     await db.delete(registrations).where(eq(registrations.workshopId, workshopId));
 
     // THEN delete the workshop
@@ -171,12 +218,15 @@ router.delete('/:id', authenticate, async (req, res) => {
   }
 });
 
-// POST: Join a workshop
-router.post('/:id/join', authenticate, async (req, res) => {
+// ==========================================
+// 7. JOIN WORKSHOP
+// ==========================================
+router.post('/:id/join', authenticate, async (req: any, res: any) => {
   try {
     const workshopId = parseInt(req.params.id);
     const userId = req.user.id; 
 
+    // Check for existing registration
     const existing = await db.select()
       .from(registrations)
       .where(and(
@@ -188,6 +238,7 @@ router.post('/:id/join', authenticate, async (req, res) => {
       return res.status(400).json({ error: "You already joined this workshop!" });
     }
 
+    // Create registration
     await db.insert(registrations).values({
       userId: userId,
       workshopId: workshopId
@@ -201,13 +252,14 @@ router.post('/:id/join', authenticate, async (req, res) => {
   }
 });
 
-// POST: Leave a workshop
-router.post('/:id/leave', authenticate, async (req, res) => {
+// ==========================================
+// 8. LEAVE WORKSHOP
+// ==========================================
+router.post('/:id/leave', authenticate, async (req: any, res: any) => {
   try {
     const workshopId = parseInt(req.params.id);
     const userId = req.user.id;
 
-    // Delete the entry where THIS user matched with THIS workshop
     await db.delete(registrations)
       .where(and(
         eq(registrations.userId, userId),
@@ -222,10 +274,10 @@ router.post('/:id/leave', authenticate, async (req, res) => {
   }
 });
 
-// GET: Get participant list for a specific workshop (Teachers Only)
-import { users } from '../db/schema'; // 👈 Make sure to import 'users' at the top!
-
-router.get('/:id/participants', authenticate, async (req, res) => {
+// ==========================================
+// 9. GET PARTICIPANTS (Teachers Only)
+// ==========================================
+router.get('/:id/participants', authenticate, async (req: any, res: any) => {
   try {
     // Only teachers can see the list
     if (req.user.role !== 'teacher') {
@@ -245,7 +297,7 @@ router.get('/:id/participants', authenticate, async (req, res) => {
 
     const userIds = workshopRegistrations.map(r => r.userId);
 
-    // 2. Fetch details (Username/Email) from Users table
+    // 2. Fetch details from Users table
     const participants = await db.select({
         id: users.id,
         username: users.username,
