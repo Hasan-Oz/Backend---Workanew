@@ -26,7 +26,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     // Verify the token
     const decoded = jwt.verify(token, secret) as Express.User;
     req.user = decoded; 
-    next(); // Pass!
+    next();
   } catch (error) {
     return res.status(403).json({ error: "Invalid token." });
   }

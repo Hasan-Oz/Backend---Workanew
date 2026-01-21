@@ -1,232 +1,287 @@
-<script lang="ts">
+<script>
   import { onMount } from 'svelte';
-  import StudentWorkshopDetailsModal from './StudentWorkshopDetailsModal.svelte';
-  import TeacherWorkshopDetailsModal from './TeacherWorkshopDetailsModal.svelte';
 
   // --- STATE ---
-  let userRole = localStorage.getItem("role") || "student";
-  let isMobileMenuOpen = false;
-  let selectedWorkshop = null;
-  
-  // Initialize weeks with empty structure
-  let weekDays = [
-    { name: 'Monday', date: '', fullDate: '', workshops: [] },
-    { name: 'Tuesday', date: '', fullDate: '', workshops: [] },
-    { name: 'Wednesday', date: '', fullDate: '', workshops: [] },
-    { name: 'Thursday', date: '', fullDate: '', workshops: [] },
-    { name: 'Friday', date: '', fullDate: '', workshops: [] }
-  ];
+  let weekData = $state([]); 
+  let isLoading = $state(true);
+  let errorMsg = $state(""); 
+  let selectedWorkshop = $state(null); 
 
-  function navigate(path: string) {
+  // --- NAVIGATION ---
+  function navigate(path) {
     window.history.pushState({}, "", path);
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  function logout() {
-    localStorage.clear();
-    window.location.href = "/login";
+  // --- HELPERS ---
+  function getCurrentWeekDays() {
+    const curr = new Date(); 
+    const week = [];
+    const first = curr.getDate() - curr.getDay() + 1; 
+    for (let i = 0; i < 5; i++) {
+      let day = new Date(curr.setDate(first + i));
+      week.push(day);
+    }
+    return week; 
   }
 
-  // --- DATE LOGIC ---
-  function setCurrentWeekDates() {
-    const today = new Date();
-    const currentDay = today.getDay(); 
-    const distanceToMonday = currentDay === 0 ? 6 : currentDay - 1;
-    const mondayDate = new Date(today);
-    mondayDate.setDate(today.getDate() - distanceToMonday);
-
-    weekDays = weekDays.map((dayObj, index) => {
-      const d = new Date(mondayDate);
-      d.setDate(mondayDate.getDate() + index);
-
-      const displayDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      // Construct YYYY-MM-DD manually to avoid timezone shifts
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      
-      return { ...dayObj, date: displayDate, fullDate: `${year}-${month}-${day}`, workshops: [] };
-    });
+  function formatDate(dateObj) {
+    return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
-  // --- DATA LOADING ---
-  onMount(async () => {
-    setCurrentWeekDates(); // Set header dates immediately
+  function getFullDateString(dateStr) {
+    if (!dateStr) return 'Monday, Jan 19';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  }
 
-    const token = localStorage.getItem("token");
+  function getTimeString(dateStr) {
+    if (!dateStr) return '00:00';
+    return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  // --- LOAD DATA ---
+  async function loadData() {
+    const currentWeekDates = getCurrentWeekDays();
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const token = localStorage.getItem('token'); 
+
+    if (!token) { navigate('/login'); return; }
+    
     try {
-      const res = await fetch("http://localhost:3000/api/workshops", {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await fetch('http://localhost:3000/api/workshops', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login');
+        return;
+      }
+      
+      const allWorkshops = await res.json();
+      
+      weekData = currentWeekDates.map((dateObj, index) => {
+        const todaysWorkshops = allWorkshops.filter(w => {
+          const wDate = new Date(w.date || w.start_time || w.createdAt); 
+          return wDate.getDate() === dateObj.getDate() &&
+                 wDate.getMonth() === dateObj.getMonth() &&
+                 wDate.getFullYear() === dateObj.getFullYear();
+        });
+
+        return {
+          name: dayNames[index],
+          date: formatDate(dateObj),
+          workshops: todaysWorkshops
+        };
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        
-        // Distribute workshops to correct columns
-        data.forEach(w => {
-            const workshopDateStr = w.date.split(' ')[0]; 
-            const matchingDayIndex = weekDays.findIndex(day => day.fullDate === workshopDateStr);
-            if (matchingDayIndex !== -1) {
-                weekDays[matchingDayIndex].workshops.push(w);
-            }
-        });
-        weekDays = [...weekDays]; 
-      }
     } catch (e) {
-      console.error(e);
+      console.error("Fetch Error:", e);
+      errorMsg = "Connection failed.";
+    } finally {
+      isLoading = false;
     }
-  });
-
-  function openDetails(w) {
-    selectedWorkshop = w;
   }
+
+  onMount(loadData);
 </script>
 
-<div class="min-h-screen bg-[#F6F6F6] flex font-sans overflow-hidden">
-  
-  {#if isMobileMenuOpen}
-    <div class="fixed inset-0 bg-black/50 z-40 lg:hidden" on:click={() => isMobileMenuOpen = false}></div>
-  {/if}
-
-  <aside 
-    class="fixed inset-y-0 left-0 z-50 w-64 bg-[#1F2D4B] text-white flex flex-col transition-transform duration-300 lg:translate-x-0 
-    {isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}"
+{#if selectedWorkshop}
+  <div 
+    class="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999] flex items-center justify-end p-6"
+    onclick={() => selectedWorkshop = null}
   >
-    <div class="p-6 text-xl font-bold flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    <div 
+      class="bg-white w-full max-w-[600px] h-full max-h-[95vh] shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col rounded-[40px] overflow-hidden"
+      onclick={(e) => e.stopPropagation()} 
+    >
+      
+      <div class="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white shrink-0">
+        <div class="flex items-center gap-2 text-xs font-bold text-gray-400">
+          <div class="w-5 h-5 opacity-40"><img src="/assets/images/logo.svg" /></div>
+          <span>Week Jan 12 - 16</span>
+          <span class="text-gray-300">/</span>
+          <span class="text-black">{getFullDateString(selectedWorkshop.date)}</span>
         </div>
-        <span>Forge</span>
+        
+        <div class="flex items-center gap-3">
+          <div class="px-2 py-1 bg-gray-50 border border-gray-200 rounded text-[10px] font-bold text-gray-400 flex items-center gap-1">
+             <div class="w-1.5 h-1.5 rounded-full border border-gray-400"></div> Public
+          </div>
+          <button 
+             onclick={() => selectedWorkshop = null}
+             class="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition"
+          >
+             <img src="/assets/images/close.svg" class="w-4 h-4 opacity-40" />
+          </button>
+        </div>
       </div>
-      <button class="lg:hidden text-gray-400 hover:text-white" on:click={() => isMobileMenuOpen = false}>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
+
+      <div class="p-8 overflow-y-auto flex-1">
+        
+        <div class="flex justify-between items-start mb-10">
+           <div class="flex gap-6">
+              <div class="w-20 h-20 bg-[#EEF2FF] rounded-[24px] flex items-center justify-center text-[#4F46E5] shrink-0">
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
+                   <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                 </svg>
+              </div>
+              <div class="pt-1">
+                 <h2 class="text-3xl font-bold text-[#111111] mb-2 leading-tight">{selectedWorkshop.title || 'Workshop Title'}</h2>
+                 <div class="flex flex-col gap-1 text-xs text-gray-500 font-medium">
+                    <div class="flex items-center gap-2"><span class="opacity-50">👤</span> Unknown Instructor</div>
+                    <div class="flex items-center gap-2"><span class="opacity-50">🌐</span> {selectedWorkshop.language || 'English'}</div>
+                 </div>
+              </div>
+           </div>
+           
+           <button class="bg-[#1F2D4B] text-white px-8 py-3 rounded-[12px] font-bold text-sm shadow-lg shadow-blue-900/10 hover:bg-[#2a3c5e] transition shrink-0">
+              Sign Up
+           </button>
+        </div>
+
+        <div class="flex gap-8 border-b border-gray-100 mb-8">
+           <button class="pb-3 border-b-2 border-[#1F2D4B] text-[#1F2D4B] font-bold text-sm">General</button>
+           <button class="pb-3 border-b-2 border-transparent text-gray-400 font-bold text-sm hover:text-gray-600 transition">Participants</button>
+           <button class="pb-3 border-b-2 border-transparent text-gray-400 font-bold text-sm hover:text-gray-600 transition">History</button>
+        </div>
+
+        <div class="space-y-6">
+           <div class="grid grid-cols-[100px_1fr] items-center">
+              <div class="flex items-center gap-2 text-sm text-gray-400"><span class="opacity-50">📄</span> Topic</div>
+              <div><span class="bg-[#EEF2FF] text-[#4F46E5] text-xs font-bold px-3 py-1 rounded-full">{selectedWorkshop.topic || 'General'}</span></div>
+           </div>
+           
+           <div class="grid grid-cols-[100px_1fr] items-center">
+              <div class="flex items-center gap-2 text-sm text-gray-400"><span class="opacity-50">📍</span> Room</div>
+              <div class="text-sm font-bold text-[#111111]">{selectedWorkshop.room || 'TBD'}</div>
+           </div>
+
+           <div class="grid grid-cols-[100px_1fr] items-center">
+              <div class="flex items-center gap-2 text-sm text-gray-400"><span class="opacity-50">📅</span> Date</div>
+              <div class="text-sm font-bold text-[#111111]">{selectedWorkshop.date || 'Upcoming'}</div>
+           </div>
+
+           <div class="grid grid-cols-[100px_1fr] items-center">
+              <div class="flex items-center gap-2 text-sm text-gray-400"><span class="opacity-50">🕒</span> Time</div>
+              <div class="text-sm font-bold text-[#111111]">{getTimeString(selectedWorkshop.date)}</div>
+           </div>
+
+           <div class="grid grid-cols-[100px_1fr] items-start pt-1">
+              <div class="flex items-center gap-2 text-sm text-gray-400"><span class="opacity-50">📝</span> Desc</div>
+              <div class="text-sm text-[#111111] leading-relaxed">{selectedWorkshop.description || 'No description provided.'}</div>
+           </div>
+        </div>
+
+      </div>
     </div>
+  </div>
+{/if}
 
-    <nav class="flex-1 px-4 py-6 space-y-2">
-      <button on:click={() => navigate('/dashboard')} class="w-full text-left px-4 py-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition flex items-center gap-3">
-         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-         Overview
-      </button>
-      <button on:click={() => navigate('/workshops')} class="w-full text-left px-4 py-3 bg-white/10 text-white rounded-xl font-medium flex items-center gap-3 transition">
-         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-         Workshops
-      </button>
+<div class="flex min-h-screen bg-[#F6F6F6] font-sans relative z-0">
+
+  <aside class="w-[86px] shrink-0 bg-white h-screen sticky top-0 flex flex-col items-center py-10 z-40 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+    <div class="w-10 h-10 mb-14 cursor-pointer hover:opacity-80 transition" onclick={() => navigate('/dashboard')}>
+      <img src="/assets/images/logo.svg" alt="Logo" class="w-full h-full object-contain" />
+    </div>
+    <nav class="flex flex-col gap-10 w-full items-center">
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/dashboard')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/Dashboard.svg" alt="Dashboard" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+        </div>
+      </div>
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/workshops')}>
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 bg-[#1F2D4B] rounded-r-full"></div>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/workshopoverview.svg" alt="Workshops" class="w-6 h-6 opacity-100" />
+        </div>
+      </div>
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/suggestions')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/studentsuggestions.svg" alt="Suggestions" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+        </div>
+      </div>
     </nav>
-
-    <div class="p-4 border-t border-white/10">
-      <button on:click={logout} class="flex items-center gap-3 text-gray-400 hover:text-red-400 transition w-full px-4 py-2">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Sign Out
-      </button>
+    <div class="mt-auto flex flex-col gap-8 items-center w-full pb-4">
+      <div class="cursor-pointer p-2 rounded-xl hover:bg-red-50 group transition" onclick={() => navigate('/login')}>
+        <img src="/assets/images/logout.svg" alt="Logout" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+      </div>
+      <div class="h-10 w-10 rounded-full bg-[#1F2D4B] flex items-center justify-center text-white font-bold text-xs border-2 border-gray-100 shadow-sm cursor-pointer hover:scale-105 transition">
+        <span>US</span>
+      </div>
     </div>
   </aside>
 
-  <main class="flex-1 lg:ml-64 p-4 sm:p-8 overflow-x-hidden w-full">
-    
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-10">
-      <div class="flex items-center gap-4 w-full md:w-auto">
-        <button class="lg:hidden h-10 w-10 bg-white rounded-xl flex items-center justify-center text-gray-500 shadow-sm" on:click={() => isMobileMenuOpen = true}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-
-        <div class="bg-white px-6 py-4 rounded-[20px] shadow-sm font-bold text-lg text-[#111827] flex-1 md:flex-none whitespace-nowrap">
-          Workshop Overview 
-          <span class="text-gray-400 font-normal ml-2 hidden sm:inline text-sm">• make the most of your day</span>
-        </div>
+  <main class="flex-1 p-8 overflow-y-auto">
+    <header class="flex justify-between items-center mb-10">
+      <div class="bg-white px-8 py-5 rounded-[24px] shadow-sm">
+        <h1 class="text-[20px] font-bold text-[#111111]">Workshop Overview <span class="text-gray-300 font-normal ml-2">• make the most of your day</span></h1>
       </div>
-
-      <div class="flex flex-wrap gap-3 w-full md:w-auto">
-        <div class="bg-white px-4 py-3 rounded-[16px] flex items-center gap-3 shadow-sm flex-1 md:w-64 text-gray-400">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <span class="text-sm">Search</span>
+      <div class="flex gap-4">
+        <div class="relative bg-white rounded-[24px] shadow-sm group focus-within:ring-2 ring-[#B8B9E8]/20 transition">
+          <input type="text" placeholder="Search" class="pl-12 pr-6 py-4 w-[280px] rounded-[24px] outline-none text-sm placeholder:text-gray-300" />
+          <img src="/assets/images/search.svg" alt="Search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-30" />
         </div>
-        <button class="bg-white h-12 px-4 rounded-[16px] flex items-center gap-2 shadow-sm hover:bg-gray-50 font-semibold text-[#111827]">
-           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-           Filter
+        <button class="bg-white px-8 py-4 rounded-[24px] shadow-sm font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition text-[#1F2D4B]">
+          <img src="/assets/images/filter.svg" alt="Filter" class="w-4 h-4" /> Filter
         </button>
-        {#if userRole === 'teacher'}
-          <button on:click={() => navigate('/create-workshop')} class="bg-[#1F2D4B] h-12 px-6 rounded-[16px] flex items-center gap-2 shadow-lg hover:opacity-90 text-white font-bold transition whitespace-nowrap">
-             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-             New
-          </button>
-        {/if}
       </div>
-    </div>
+    </header>
 
-    <div class="flex gap-6 overflow-x-auto pb-10 scrollbar-hide">
-      {#each weekDays as day}
-        <div class="min-w-[320px] flex flex-col gap-4">
-          
-          <div class="bg-[#F3F4F6] px-5 py-4 rounded-[20px] flex justify-between items-center text-[#111827]">
-            <div class="flex items-center gap-3">
-               <span class="font-bold text-sm">{day.name}</span>
-               <span class="bg-[#1F2D4B] text-white text-[11px] font-bold h-5 w-5 flex items-center justify-center rounded-[6px]">{day.workshops.length}</span>
-            </div>
-            <span class="text-gray-400 text-xs font-medium">{day.date}</span>
-          </div>
-
-          {#each day.workshops as w}
-            <div on:click={() => openDetails(w)} class="bg-white p-5 rounded-[20px] shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-transparent hover:border-gray-200 transition cursor-pointer group flex flex-col gap-3">
-              
-              <div class="flex justify-between items-start">
-                 <div class="flex items-center gap-2">
-                    <div class="bg-[#F3F4F6] p-1.5 rounded-lg text-gray-500">
-                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-                    </div>
-                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{w.topic || 'General'}</span>
-                 </div>
-                 <button class="text-gray-300 hover:text-gray-600">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
-                 </button>
-              </div>
-
-              <div>
-                 <h3 class="font-bold text-[#111827] text-[15px] mb-1 leading-tight group-hover:text-[#2F62E9] transition-colors">{w.title}</h3>
-                 <p class="text-gray-400 text-[11px] leading-relaxed line-clamp-2">{w.description}</p>
-              </div>
-
-              <div class="flex items-center gap-4 mt-1 pt-3 border-t border-gray-50">
-                 <div class="flex items-center gap-1.5 text-gray-400">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    <span class="text-[10px] font-bold">{w.language ? w.language.substring(0,2) : 'EN'}</span>
-                 </div>
-                 <div class="flex items-center gap-1.5 text-gray-400">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    <span class="text-[10px] font-bold">{w.room ? w.room.split(' ')[0] : 'Online'}</span>
-                 </div>
-                 <div class="flex items-center gap-1.5 text-gray-400 ml-auto">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    <span class="text-[10px] font-bold">{w.time}</span>
-                 </div>
-              </div>
-
-            </div>
-          {/each}
-
-          {#if day.workshops.length === 0}
-            <div class="h-32 bg-[#F3F4F6] rounded-[20px] flex flex-col gap-2 items-center justify-center text-gray-400">
-               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12"/></svg>
-               <span class="text-[11px] font-medium">No workshops scheduled yet</span>
-            </div>
-          {/if}
-        </div>
-      {/each}
-    </div>
-
-  </main>
-
-  {#if selectedWorkshop}
-    {#if userRole === 'teacher'}
-      <TeacherWorkshopDetailsModal workshop={selectedWorkshop} on:close={() => selectedWorkshop = null} />
+    {#if isLoading}
+      <div class="text-center py-20 text-gray-400">Loading schedule...</div>
+    {:else if errorMsg}
+      <div class="p-6 bg-red-50 text-red-500 rounded-xl border border-red-100 text-center">{errorMsg}</div>
     {:else}
-      <StudentWorkshopDetailsModal workshop={selectedWorkshop} on:close={() => selectedWorkshop = null} />
-    {/if}
-  {/if}
-</div>
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
+        {#each weekData as day}
+          <div class="space-y-6">
+            <div class="bg-white/60 p-5 rounded-[24px] flex justify-between items-center border border-white backdrop-blur-sm">
+              <div class="flex items-center gap-2">
+                 <span class="font-bold text-sm text-[#111111]">{day.name}</span>
+                 {#if day.workshops.length > 0}
+                    <span class="bg-[#1F2D4B] text-white text-[10px] px-2 py-0.5 rounded font-bold">{day.workshops.length}</span>
+                 {:else}
+                    <span class="bg-gray-200 text-gray-500 text-[10px] px-2 py-0.5 rounded font-bold">0</span>
+                 {/if}
+              </div>
+              <span class="text-[10px] text-gray-400 font-medium">{day.date}</span>
+            </div>
 
-<style>
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
-  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-</style>
+            {#if day.workshops.length > 0}
+              {#each day.workshops as w}
+                <div 
+                  class="bg-white p-6 rounded-[24px] shadow-sm border border-gray-50 group hover:shadow-lg hover:-translate-y-1 transition duration-300 cursor-pointer"
+                  onclick={() => selectedWorkshop = w} 
+                >
+                   <div class="flex justify-between mb-4">
+                      <div class="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        <img src="/assets/images/logo.svg" alt="Icon" class="w-3 h-3 opacity-30" /> 
+                        {w.topic || w.category || 'Workshop'}
+                      </div>
+                      <div class="text-[10px] text-gray-300">⟷</div>
+                   </div>
+                   <h3 class="font-bold text-[14px] text-[#111111] mb-4">{w.title || w.name || 'Untitled'}</h3>
+                   <p class="text-[10px] text-gray-400 leading-relaxed mb-6 line-clamp-3">
+                     {w.description || 'No description provided.'}
+                   </p>
+                   <div class="flex flex-wrap gap-3 text-[9px] text-gray-400 font-bold border-t border-gray-50 pt-4">
+                     <span class="flex items-center gap-1">🌐 {w.language || 'EN'}</span>
+                     <span class="flex items-center gap-1">📍 {w.room || 'TBD'}</span>
+                     <span class="flex items-center gap-1">🕒 {w.duration || '30'} min</span>
+                   </div>
+                </div>
+              {/each}
+            {:else}
+              <div class="bg-white/40 border border-dashed border-gray-200 rounded-[24px] h-32 flex flex-col items-center justify-center gap-2 opacity-60">
+                 <div class="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-[10px] text-gray-400">🕒</div>
+                 <p class="text-[10px] text-gray-400">No workshops</p>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </main>
+</div>

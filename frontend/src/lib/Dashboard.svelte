@@ -6,9 +6,11 @@
   let userRole = localStorage.getItem("role") || "student";
   let token = localStorage.getItem("token");
 
+  
   // Navigation Helper
-  function navigate(path: string) {
+  function navigate(path) {
     window.history.pushState({}, "", path);
+    // This line forces App.svelte to notice the change and switch pages
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
@@ -20,31 +22,46 @@
 
 <div class="min-h-screen bg-[#F6F6F6] flex font-sans">
   
-  <aside class="w-64 bg-[#1F2D4B] text-white flex flex-col fixed h-full z-20">
-    <div class="p-6 text-xl font-bold flex items-center gap-2">
-      <div class="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-      </div>
-      Workshop Forge
+  <aside class="w-[86px] shrink-0 bg-white h-screen sticky top-0 flex flex-col items-center py-10 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+    
+    <div class="w-10 h-10 mb-14 cursor-pointer hover:opacity-80 transition" onclick={() => navigate('/dashboard')}>
+      <img src="/assets/images/logo.svg" alt="Logo" class="w-full h-full object-contain" />
     </div>
 
-    <nav class="flex-1 px-4 py-6 space-y-2">
-      <button on:click={() => navigate('/dashboard')} class="w-full text-left px-4 py-3 bg-white/10 rounded-xl font-medium flex items-center gap-3 transition">
-         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-         Overview
-      </button>
+    <nav class="flex flex-col gap-10 w-full items-center">
+      
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/dashboard')}>
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 bg-[#1F2D4B] rounded-r-full"></div>
+        
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/Dashboard.svg" alt="Dashboard" class="w-6 h-6 opacity-100" />
+        </div>
+      </div>
+      
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/workshops')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/workshopoverview.svg" alt="Workshops" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+        </div>
+      </div>
 
-      <button on:click={() => navigate('/workshops')} class="w-full text-left px-4 py-3 text-gray-400 hover:text-white hover:bg-white/5 rounded-xl transition flex items-center gap-3">
-         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-         Workshops
-      </button>
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/suggestions')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/studentsuggestions.svg" alt="Suggestions" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+        </div>
+      </div>
+
     </nav>
 
-    <div class="p-4 border-t border-white/10">
-      <button on:click={logout} class="flex items-center gap-3 text-gray-400 hover:text-red-400 transition w-full px-4 py-2">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        Sign Out
-      </button>
+    <div class="mt-auto flex flex-col gap-8 items-center w-full pb-4">
+      
+      <div class="cursor-pointer p-2 rounded-xl hover:bg-red-50 group transition" onclick={() => navigate('/login')}>
+        <img src="/assets/images/logout.svg" alt="Logout" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+      </div>
+
+      <div class="h-10 w-10 rounded-full bg-[#1F2D4B] flex items-center justify-center text-white font-bold text-xs border-2 border-gray-100 shadow-sm cursor-pointer hover:scale-105 transition">
+        <span>US</span>
+      </div>
+
     </div>
   </aside>
 

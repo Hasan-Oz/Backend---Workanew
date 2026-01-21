@@ -24,6 +24,8 @@
     <CreateWorkshop />
   {:else if currentPath === '/preview-workshop'}
     <PreviewWorkshop />
+  {:else if currentPath === '/suggestions'}
+    <div class="p-10">Suggestions Page (Link working!)</div> 
   {:else}
     <Login />
   {/if}

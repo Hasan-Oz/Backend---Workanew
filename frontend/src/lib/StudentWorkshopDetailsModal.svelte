@@ -1,136 +1,203 @@
-<script lang="ts">
-  import { createEventDispatcher } from 'svelte';
-  export let workshop; 
+<script>
+  import { onMount } from 'svelte';
+  // 1. IMPORT THE MODAL (Make sure this file exists in your lib folder)
+  import StudentWorkshopDetailsModal from './StudentWorkshopDetailsModal.svelte';
 
-  const dispatch = createEventDispatcher();
-  let isJoined = false; // You can check this against the user's ID in a real app
+  // --- STATE ---
+  let weekData = $state([]); 
+  let isLoading = $state(true);
+  let errorMsg = $state(""); 
+  
+  // 2. MODAL STATE
+  let selectedWorkshop = $state(null); // Holds the data of the workshop you clicked
 
-  function close() {
-    dispatch('close');
+  // --- NAVIGATION ---
+  function navigate(path) {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  async function handleJoin() {
-    const token = localStorage.getItem("token");
-    const res = await fetch(`http://localhost:3000/api/workshops/${workshop.id}/join`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` }
-    });
+  // --- HELPER: Get Dates ---
+  function getCurrentWeekDays() {
+    const curr = new Date(); 
+    const week = [];
+    const first = curr.getDate() - curr.getDay() + 1; 
+    for (let i = 0; i < 5; i++) {
+      let day = new Date(curr.setDate(first + i));
+      week.push(day);
+    }
+    return week; 
+  }
 
-    if (res.ok) {
-      isJoined = true;
-      alert("Successfully signed up!");
-      dispatch('refresh'); // Tell parent to reload list
-    } else {
-      alert("Failed to join.");
+  function formatDate(dateObj) {
+    return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  // --- LOAD DATA ---
+  async function loadData() {
+    const currentWeekDates = getCurrentWeekDays();
+    const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const token = localStorage.getItem('token'); 
+
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+    
+    try {
+      const res = await fetch('http://localhost:3000/api/workshops', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login');
+        return;
+      }
+      
+      const allWorkshops = await res.json();
+      
+      weekData = currentWeekDates.map((dateObj, index) => {
+        const todaysWorkshops = allWorkshops.filter(w => {
+          const wDate = new Date(w.date || w.start_time || w.createdAt); 
+          return wDate.getDate() === dateObj.getDate() &&
+                 wDate.getMonth() === dateObj.getMonth() &&
+                 wDate.getFullYear() === dateObj.getFullYear();
+        });
+
+        return {
+          name: dayNames[index],
+          date: formatDate(dateObj),
+          workshops: todaysWorkshops
+        };
+      });
+
+    } catch (e) {
+      console.error("Fetch Error:", e);
+      errorMsg = "Connection failed.";
+    } finally {
+      isLoading = false;
     }
   }
 
-  function formatDate(dateString) {
-    if (!dateString) return 'Date TBD';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-  }
+  onMount(loadData);
 </script>
 
-<div class="fixed inset-0 bg-black/50 z-40 transition-opacity" on:click={close}></div>
+<div class="flex min-h-screen bg-[#F6F6F6] font-sans relative">
 
-<aside class="fixed inset-0 p-3 sm:p-4 flex justify-end z-50 pointer-events-none font-sans">
-  <div class="pointer-events-auto h-full w-full sm:w-[92%] md:w-[38%] lg:w-[44%] max-w-[720px] rounded-[20px] bg-white border border-[#E9ECF5] shadow-[0_12px_40px_rgba(17,24,39,0.12)] overflow-hidden flex flex-col">
-    
-    <div class="px-5 sm:px-6 py-4 flex items-center gap-4 border-b border-[#EEF1F7]">
-      <div class="h-9 w-9 rounded-xl bg-[#F3F5FF] flex items-center justify-center">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="text-[#111827]">
-          <path d="M12 3 2 8l10 5 10-5-10-5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-          <path d="M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-        </svg>
-      </div>
-
-      <div class="flex-1 flex items-center gap-2 min-w-0">
-        <span class="text-[#6B7280]">Workshop Details</span>
-        <span class="text-[#D1D5DB]">/</span>
-        <span class="font-semibold text-[#111827]">{formatDate(workshop.date)}</span>
-      </div>
-
-      <div class="flex items-center gap-2 text-[#111827] font-semibold text-sm">
-         <span class="h-2 w-2 rounded-full bg-green-500"></span>
-         Public
-      </div>
-
-      <button on:click={close} class="h-9 w-9 rounded-full border border-[#EEF1F7] flex items-center justify-center hover:bg-gray-50 transition">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
-      </button>
+  <aside class="w-[86px] shrink-0 bg-white h-screen sticky top-0 flex flex-col items-center py-10 z-40 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+    <div class="w-10 h-10 mb-14 cursor-pointer hover:opacity-80 transition" onclick={() => navigate('/dashboard')}>
+      <img src="/assets/images/logo.svg" alt="Logo" class="w-full h-full object-contain" />
     </div>
-
-    <div class="px-5 sm:px-6 py-5 border-b border-[#EEF1F7]">
-      <div class="flex items-center gap-5">
-        <div class="h-20 w-20 rounded-2xl bg-[#E7E9FF] flex items-center justify-center shrink-0">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2F62E9" stroke-width="1.5">
-             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
+    <nav class="flex flex-col gap-10 w-full items-center">
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/dashboard')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/Dashboard.svg" alt="Dashboard" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
         </div>
-
-        <div class="flex-1 min-w-0">
-          <div class="text-[22px] font-semibold text-[#111827] leading-tight mb-2">{workshop.title}</div>
-          <div class="flex flex-col gap-1 text-sm text-[#6B7280]">
-            <div class="flex items-center gap-2">
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-               {workshop.teacherName || 'Instructor'}
-            </div>
-            <div class="flex items-center gap-2">
-               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
-               {workshop.language || 'English'}
-            </div>
-          </div>
+      </div>
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/workshops')}>
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 bg-[#1F2D4B] rounded-r-full"></div>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/workshopoverview.svg" alt="Workshops" class="w-6 h-6 opacity-100" />
         </div>
+      </div>
+      <div class="group cursor-pointer relative w-full flex justify-center" onclick={() => navigate('/suggestions')}>
+        <div class="p-2 rounded-xl transition group-hover:bg-gray-50">
+          <img src="/assets/images/studentsuggestions.svg" alt="Suggestions" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+        </div>
+      </div>
+    </nav>
+    <div class="mt-auto flex flex-col gap-8 items-center w-full pb-4">
+      <div class="cursor-pointer p-2 rounded-xl hover:bg-red-50 group transition" onclick={() => navigate('/login')}>
+        <img src="/assets/images/logout.svg" alt="Logout" class="w-6 h-6 opacity-40 group-hover:opacity-100 transition" />
+      </div>
+      <div class="h-10 w-10 rounded-full bg-[#1F2D4B] flex items-center justify-center text-white font-bold text-xs border-2 border-gray-100 shadow-sm cursor-pointer hover:scale-105 transition">
+        <span>US</span>
+      </div>
+    </div>
+  </aside>
 
-        <button 
-          on:click={handleJoin}
-          disabled={isJoined}
-          class="hidden sm:flex h-11 px-6 rounded-xl {isJoined ? 'bg-gray-100 text-gray-400' : 'bg-[#1F2D4B] text-white hover:bg-[#2a3c5e]'} font-semibold shadow-sm items-center justify-center transition">
-          {isJoined ? 'Joined' : 'Sign Up'}
+  <main class="flex-1 p-8 overflow-y-auto z-0">
+    <header class="flex justify-between items-center mb-10">
+      <div class="bg-white px-8 py-5 rounded-[24px] shadow-sm">
+        <h1 class="text-[20px] font-bold text-[#111111]">Workshop Overview <span class="text-gray-300 font-normal ml-2">• make the most of your day</span></h1>
+      </div>
+      <div class="flex gap-4">
+        <div class="relative bg-white rounded-[24px] shadow-sm group focus-within:ring-2 ring-[#B8B9E8]/20 transition">
+          <input type="text" placeholder="Search" class="pl-12 pr-6 py-4 w-[280px] rounded-[24px] outline-none text-sm placeholder:text-gray-300" />
+          <img src="/assets/images/search.svg" alt="Search" class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-30" />
+        </div>
+        <button class="bg-white px-8 py-4 rounded-[24px] shadow-sm font-bold text-sm flex items-center gap-2 hover:bg-gray-50 transition text-[#1F2D4B]">
+          <img src="/assets/images/filter.svg" alt="Filter" class="w-4 h-4" /> Filter
         </button>
       </div>
-    </div>
+    </header>
 
-    <div class="px-5 sm:px-6 pt-3 border-b border-[#EEF1F7]">
-       <div class="flex gap-8">
-          <button class="pb-4 border-b-2 border-[#1F2D4B] font-semibold text-[#111827] flex items-center gap-2">
-             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-             General
-          </button>
+    {#if isLoading}
+      <div class="text-center py-20 text-gray-400">Loading schedule...</div>
+    {:else if errorMsg}
+      <div class="p-6 bg-red-50 text-red-500 rounded-xl border border-red-100 text-center">{errorMsg}</div>
+    {:else}
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-6">
+        
+        {#each weekData as day}
+          <div class="space-y-6">
+            <div class="bg-white/60 p-5 rounded-[24px] flex justify-between items-center border border-white backdrop-blur-sm">
+              <div class="flex items-center gap-2">
+                 <span class="font-bold text-sm text-[#111111]">{day.name}</span>
+                 {#if day.workshops.length > 0}
+                    <span class="bg-[#1F2D4B] text-white text-[10px] px-2 py-0.5 rounded font-bold">{day.workshops.length}</span>
+                 {:else}
+                    <span class="bg-gray-200 text-gray-500 text-[10px] px-2 py-0.5 rounded font-bold">0</span>
+                 {/if}
+              </div>
+              <span class="text-[10px] text-gray-400 font-medium">{day.date}</span>
+            </div>
+
+            {#if day.workshops.length > 0}
+              {#each day.workshops as w}
+                <div 
+                  class="bg-white p-6 rounded-[24px] shadow-sm border border-gray-50 group hover:shadow-lg hover:-translate-y-1 transition duration-300 cursor-pointer"
+                  onclick={() => selectedWorkshop = w} 
+                >
+                   <div class="flex justify-between mb-4">
+                      <div class="flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                        <img src="/assets/images/logo.svg" alt="Icon" class="w-3 h-3 opacity-30" /> 
+                        {w.topic || w.category || 'Workshop'}
+                      </div>
+                      <div class="text-[10px] text-gray-300">⟷</div>
+                   </div>
+                   
+                   <h3 class="font-bold text-[14px] text-[#111111] mb-4">{w.title || w.name || 'Untitled'}</h3>
+                   <p class="text-[10px] text-gray-400 leading-relaxed mb-6 line-clamp-3">
+                     {w.description || 'No description provided.'}
+                   </p>
+                   
+                   <div class="flex flex-wrap gap-3 text-[9px] text-gray-400 font-bold border-t border-gray-50 pt-4">
+                     <span class="flex items-center gap-1">🌐 {w.language || 'EN'}</span>
+                     <span class="flex items-center gap-1">📍 {w.room || 'TBD'}</span>
+                     <span class="flex items-center gap-1">🕒 {w.duration || '30'} min</span>
+                   </div>
+                </div>
+              {/each}
+            {:else}
+              <div class="bg-white/40 border border-dashed border-gray-200 rounded-[24px] h-32 flex flex-col items-center justify-center gap-2 opacity-60">
+                 <div class="w-8 h-8 rounded-full border border-gray-300 flex items-center justify-center text-[10px] text-gray-400">🕒</div>
+                 <p class="text-[10px] text-gray-400">No workshops</p>
+              </div>
+            {/if}
           </div>
-    </div>
+        {/each}
 
-    <div class="flex-1 overflow-y-auto px-5 sm:px-6 py-6">
-       <div class="grid grid-cols-[100px_1fr] gap-y-8 text-[16px]">
-          
-          <div class="text-gray-400 flex gap-2 items-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Topic</div>
-          <div><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-bold">{workshop.topic}</span></div>
+      </div>
+    {/if}
+  </main>
 
-          <div class="text-gray-400 flex gap-2 items-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg> Room</div>
-          <div class="font-medium">{workshop.room || 'Online'}</div>
+  {#if selectedWorkshop}
+    <StudentWorkshopDetailsModal 
+       workshop={selectedWorkshop} 
+       onClose={() => selectedWorkshop = null} 
+    />
+  {/if}
 
-          <div class="text-gray-400 flex gap-2 items-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Date</div>
-          <div class="font-medium">{workshop.date}</div>
-
-          <div class="text-gray-400 flex gap-2 items-center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Time</div>
-          <div class="font-medium">{workshop.time}</div>
-
-          <div class="text-gray-400 flex gap-2 items-start pt-1"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> Desc</div>
-          <div class="text-gray-600 leading-relaxed">
-             {workshop.description}
-          </div>
-       </div>
-    </div>
-
-    <div class="sm:hidden p-4 border-t border-gray-100">
-        <button 
-          on:click={handleJoin}
-          disabled={isJoined}
-          class="w-full h-12 rounded-xl {isJoined ? 'bg-gray-100 text-gray-400' : 'bg-[#1F2D4B] text-white'} font-bold shadow-lg">
-          {isJoined ? 'Joined' : 'Sign Up'}
-        </button>
-    </div>
-
-  </div>
-</aside>
+</div>

@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import StudentWorkshopDetailsModal from './StudentWorkshopDetailsModal.svelte';
-
-  // --- MOCK DATA FOR WIDGETS ---
   
   // 1. Today's Workshops (Top Left)
   let todayWorkshops = [

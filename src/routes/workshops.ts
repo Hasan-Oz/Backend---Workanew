@@ -58,10 +58,10 @@ router.get('/', authenticate, async (req: any, res: any) => {
     const allWorkshops = await db
       .select()
       .from(workshops)
-      .where(eq(workshops.status, 'Public')) // Matches 'Public' from your team's DB script
+      .where(eq(workshops.status, 'Public'))
       .orderBy(desc(workshops.createdAt));
 
-    // Optional: Calculate participant counts for the UI
+    // Calculate participant counts for the UI
     const allRegistrations = await db.select().from(registrations);
     const finalResult = allWorkshops.map(w => {
       const count = allRegistrations.filter(r => r.workshopId === w.id).length;
@@ -107,7 +107,7 @@ router.post('/', authenticate, async (req: any, res: any) => {
       
       // MAP FIELDS:
       room: location || "Online",       // Frontend 'location' -> DB 'room'
-      language: language || "EN",       // New Language field
+      language: language || "EN", 
       
       duration: duration ? parseInt(duration) : 60,
       status: status || 'Public',       // Default to Public as per schema
@@ -178,9 +178,9 @@ router.put('/:id', authenticate, async (req: any, res: any) => {
     await db.update(workshops)
       .set({
         topic,
-        title: topic, // Keeping title in sync if desired
+        title: topic,
         date,
-        room: location, // Map location -> room
+        room: location, 
         description,
         language
       })
@@ -286,7 +286,7 @@ router.get('/:id/participants', authenticate, async (req: any, res: any) => {
 
     const workshopId = parseInt(req.params.id);
 
-    // 1. Get User IDs from registrations
+    // Get User IDs from registrations
     const workshopRegistrations = await db.select()
       .from(registrations)
       .where(eq(registrations.workshopId, workshopId));
@@ -297,7 +297,7 @@ router.get('/:id/participants', authenticate, async (req: any, res: any) => {
 
     const userIds = workshopRegistrations.map(r => r.userId);
 
-    // 2. Fetch details from Users table
+    // Fetch details from Users table
     const participants = await db.select({
         id: users.id,
         username: users.username,

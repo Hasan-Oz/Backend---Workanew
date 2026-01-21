@@ -42,7 +42,7 @@
       // 1. Fetch Participants
       if (tab === 'participants') {
         // Mocking the call - replace with: fetch(`.../api/workshops/${workshop.id}/participants`)
-        // For now, we simulate the list from your screenshot
+        // For now, we simulate the list
         await new Promise(r => setTimeout(r, 300)); // Fake delay
         participants = [
           { name: "Avetyan, Rafayel", bg: "bg-[#1F2D4B]", text: "text-white" },
@@ -58,7 +58,6 @@
 
       // 2. Fetch History
       if (tab === 'history') {
-         // Mocking history logs matching your screenshot
          historyLogs = [
            { time: "Jan 12, 13:38", text: "Does, Darian verified their attendance", bold: "Does, Darian" },
            { time: "Jan 12, 13:37", text: "Does, Darian verified their attendance", bold: "Does, Darian" },

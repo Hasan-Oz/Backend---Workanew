@@ -26,7 +26,6 @@
       const data = await response.json();
 
       if (response.ok) {
-        // SUCCESS
         localStorage.setItem("token", data.token);
         localStorage.setItem("role", data.role);
         
